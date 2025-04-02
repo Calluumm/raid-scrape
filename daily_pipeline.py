@@ -3,9 +3,9 @@ import subprocess
 import sqlite3
 
 scripts = {
-    "publicprofile_list": r"c:\Users\Student\Desktop\wynn programs\publicprofile_list.py",
-    "process_raids": r"c:\Users\Student\Desktop\wynn programs\raiddays\process_raids.py",
-    "store_character_data": r"c:\Users\Student\Desktop\wynn programs\raiddays\store_character_data.py"
+    "publicprofile_list": r"c:\...\publicprofile_list.py",
+    "process_raids": r"c:\...\process_raids.py",
+    "store_character_data": r"c:\...\store_character_data.py"
 }
 print("Collecting public profiles")
 subprocess.run(["python", scripts["publicprofile_list"]], check=True)
@@ -14,7 +14,7 @@ subprocess.run(["python", scripts["process_raids"]], check=True)
 print("Collecting character data")
 subprocess.run(["python", scripts["store_character_data"]], check=True)
 print("Clearing deltas")
-db_path = r"c:\Users\Student\Desktop\wynn programs\raiddays\public_uuids.db"
+db_path = r"c:\...\public_uuids.db"
 conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
 cursor.execute("""
