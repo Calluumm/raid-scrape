@@ -1,9 +1,8 @@
 import sqlite3
 import requests
 
-db_path = r"c:\Users\Student\Desktop\wynn programs\raiddays\public_uuids.db"
+db_path = r"c:\...\public_uuids.db"
 api_url = "https://api.wynncraft.com/v3/player/{uuid}?fullResult"
-
 conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
 try:
@@ -12,9 +11,8 @@ try:
     cursor.execute("ALTER TABLE character_raids ADD COLUMN delta_orphions_nexus_of_light INTEGER DEFAULT 0")
     cursor.execute("ALTER TABLE character_raids ADD COLUMN delta_the_nameless_anomaly INTEGER DEFAULT 0")
     conn.commit()
-    print("Added missing columns to character_raids table.")
 except sqlite3.OperationalError as e:
-    print(f"Columns may already exist: {e}")
+    print(f"Columns already exist: {e}")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS character_raids (
     character_uuid TEXT PRIMARY KEY,
