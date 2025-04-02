@@ -3,7 +3,7 @@ import requests
 from datetime import datetime
 import time
 
-db_path = r"c:\Users\Student\Desktop\wynn programs\raiddays\public_uuids.db"
+db_path = r"c:\...\public_uuids.db"
 character_api_url = "https://api.wynncraft.com/v3/player/{primary_uuid}/characters/{character_uuid}"
 abilities_api_url = "https://api.wynncraft.com/v3/player/{primary_uuid}/characters/{character_uuid}/abilities"
 archetype_nodes = {
@@ -68,7 +68,6 @@ for character_uuid, primary_uuid, delta_nest, delta_canyon, delta_orphion, delta
         print("Rate limit reached. Sleeping for 60 seconds...")
         time.sleep(60)
         request_count = 0
-
     response = requests.get(character_api_url.format(primary_uuid=primary_uuid, character_uuid=character_uuid))
     request_count += 1
     if response.status_code != 200:
@@ -110,7 +109,6 @@ for character_uuid, primary_uuid, delta_nest, delta_canyon, delta_orphion, delta
         print(f"Unexpected abilities data format for character {character_uuid}: {abilities_data}")
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
     try:
         cursor.execute("""
         INSERT OR REPLACE INTO character_data (
