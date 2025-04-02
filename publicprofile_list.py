@@ -4,7 +4,7 @@ import time
 import requests
 import sqlite3
 
-directory = r"c:\Users\Student\Desktop\wynn programs\raiddays"
+directory = r"c:\..."
 file_name = "day2.csv"  # Taken from valor's tables
 file_path = os.path.join(directory, file_name)
 db_path = os.path.join(directory, "public_uuids.db")
