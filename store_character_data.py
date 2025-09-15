@@ -1,7 +1,10 @@
 import sqlite3
 import requests
+from requests.adapters import HTTPAdapter, Retry
+from urllib3.util.ssl_ import create_urllib3_context
 from datetime import datetime
 import time
+import os
 
 db_path = r"c:\...\public_uuids.db"
 character_api_url = "https://api.wynncraft.com/v3/player/{primary_uuid}/characters/{character_uuid}"
@@ -11,7 +14,7 @@ archetype_nodes = {
     "manaTrap": "Trapper",        # archer
     "concentration": "Sharpshooter",  # archer
     "nightcloakKnives": "Shadestepper",  # assassin
-    "darkArts": "Trickster",      # assassin
+    "maliciousMockery": "Trickster",      # assassin
     "lacerate": "Acrobat",        # assassin
     "timeDilation": "Riftwalker",  # mage
     "ophanim": "Lightbender",     # mage
@@ -24,27 +27,31 @@ archetype_nodes = {
     "heavenlyTrumpet": "Paladin"  # warrior
 }
 
+class TLSAdapter(HTTPAdapter):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.ssl_context = create_urllib3_context()
+        self.ssl_context.options |= 0x4
+        self.ssl_context.options |= 0x8 
+
+retries = Retry(
+    total=5,
+    backoff_factor=1,
+    status_forcelist=[500, 502, 503, 504],
+    allowed_methods=["GET"]
+)
+
+session = requests.Session()
+session.mount("https://", TLSAdapter())
+session.mount("https://", HTTPAdapter(max_retries=retries))
+
+api_token = os.environ.get('WYNNCRAFT_API_TOKEN')
+if api_token:
+    session.headers.update({'Authorization': f'Bearer {api_token}'})
+    print("Using API token for enhanced rate limits.")
+
 conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS character_data (
-    character_uuid TEXT PRIMARY KEY,
-    primary_uuid TEXT NOT NULL,
-    strength INTEGER,
-    dexterity INTEGER,
-    intelligence INTEGER,
-    defense INTEGER,
-    agility INTEGER,
-    archetype TEXT,
-    delta_nest_of_the_grootslangs INTEGER,
-    delta_the_canyon_colossus INTEGER,
-    delta_orphions_nexus_of_light INTEGER,
-    delta_the_nameless_anomaly INTEGER,
-    class_type TEXT,
-    timestamp TEXT
-)
-""")
-conn.commit()
 
 cursor.execute("""
 SELECT character_uuid, primary_uuid,
@@ -61,21 +68,60 @@ WHERE delta_nest_of_the_grootslangs != 0
 changed_characters = cursor.fetchall()
 
 request_count = 0
-rate_limit = 100
+rate_limit = 100 #can make 120
 
 for character_uuid, primary_uuid, delta_nest, delta_canyon, delta_orphion, delta_nameless in changed_characters:
     if request_count >= rate_limit:
         print("Rate limit reached. Sleeping for 60 seconds...")
         time.sleep(60)
         request_count = 0
-    response = requests.get(character_api_url.format(primary_uuid=primary_uuid, character_uuid=character_uuid))
-    request_count += 1
+
+    retry_count = 0
+    max_retries = 3
+    
+    while retry_count < max_retries:
+        try:
+            response = session.get(character_api_url.format(primary_uuid=primary_uuid, character_uuid=character_uuid), timeout=10)
+            request_count += 1
+            
+            if response.status_code == 429:
+                wait_time = 60
+                print(f"Rate limited (429) for character {character_uuid}. Waiting {wait_time} seconds...")
+                time.sleep(wait_time)
+                retry_count += 1
+                continue
+            elif response.status_code != 200:
+                print(f"Failed to fetch skill points for character {character_uuid}. Status code: {response.status_code}")
+                break
+            else:
+                break
+                
+        except requests.exceptions.SSLError as e:
+            print(f"SSL error for character {character_uuid}: {e}")
+            break
+        except requests.exceptions.RequestException as e:
+            print(f"Request error for character {character_uuid}: {e}")
+            break
+    
+    if retry_count >= max_retries:
+        print(f"Max retries exceeded for character {character_uuid}. Skipping.")
+        continue
+    
     if response.status_code != 200:
-        print(f"Failed to fetch skill points for character {character_uuid}. Status code: {response.status_code}")
         continue
 
     character_data = response.json()
+    
+    if not character_data or not isinstance(character_data, dict):
+        print(f"Invalid character data for {character_uuid}: {character_data}")
+        continue
+    
     skill_points = character_data.get("skillPoints", {})
+    
+    if skill_points is None:
+        print(f"No skill points data for character {character_uuid}")
+        skill_points = {}
+    
     strength = skill_points.get("strength", 0)
     dexterity = skill_points.get("dexterity", 0)
     intelligence = skill_points.get("intelligence", 0)
@@ -83,35 +129,61 @@ for character_uuid, primary_uuid, delta_nest, delta_canyon, delta_orphion, delta
     agility = skill_points.get("agility", 0)
     class_type = character_data.get("type", "Unknown")
 
-
-    response = requests.get(abilities_api_url.format(primary_uuid=primary_uuid, character_uuid=character_uuid))
-    request_count += 1 
-    if response.status_code != 200:
-        print(f"Failed to fetch abilities for character {character_uuid}. Status code: {response.status_code}")
-        continue
-
-    abilities_data = response.json()
-    archetype = "N/A"
-
-    if isinstance(abilities_data, list):
-        for ability in abilities_data:
-            if ability.get("type") == "ability":
-                ability_id = ability.get("id")
-                if ability_id in archetype_nodes:
-                    archetype = archetype_nodes[ability_id]
-                    break
-                family = ability.get("family", [])
-                for family_id in family:
-                    if family_id in archetype_nodes:
-                        archetype = archetype_nodes[family_id]
-                        break
+    retry_count = 0
+    while retry_count < max_retries:
+        try:
+            response = session.get(abilities_api_url.format(primary_uuid=primary_uuid, character_uuid=character_uuid), timeout=10)
+            request_count += 1
+            
+            if response.status_code == 429:
+                wait_time = 60
+                print(f"Rate limited (429) for abilities {character_uuid}. Waiting {wait_time} seconds...")
+                time.sleep(wait_time)
+                retry_count += 1
+                continue
+            elif response.status_code != 200:
+                print(f"Failed to fetch abilities for character {character_uuid}. Status code: {response.status_code}")
+                break
+            else:
+                break
+                
+        except requests.exceptions.RetryError as e:
+            print(f"Max retries exceeded for abilities {character_uuid}: {e}")
+            break
+        except requests.exceptions.SSLError as e:
+            print(f"SSL error for abilities {character_uuid}: {e}")
+            break
+        except requests.exceptions.RequestException as e:
+            print(f"Request error for abilities {character_uuid}: {e}")
+            break
+    
+    if retry_count >= max_retries or response.status_code != 200:
+        print(f"Skipping abilities for character {character_uuid}, using archetype N/A")
+        archetype = "N/A"
     else:
-        print(f"Unexpected abilities data format for character {character_uuid}: {abilities_data}")
+        abilities_data = response.json()
+        archetype = "N/A"
+
+        if isinstance(abilities_data, list):
+            for ability in abilities_data:
+                if ability.get("type") == "ability":
+                    ability_id = ability.get("id")
+                    if ability_id in archetype_nodes:
+                        archetype = archetype_nodes[ability_id]
+                        break
+                    family = ability.get("family", [])
+                    for family_id in family:
+                        if family_id in archetype_nodes:
+                            archetype = archetype_nodes[family_id]
+                            break
+        else:
+            print(f"Unexpected abilities data format for character {character_uuid}: {abilities_data}")
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     try:
         cursor.execute("""
-        INSERT OR REPLACE INTO character_data (
+        INSERT INTO character_data (
             character_uuid,
             primary_uuid,
             strength,
